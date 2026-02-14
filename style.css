@@ -25,7 +25,7 @@
 
   --toolbar-h: 48px;
   --sidebar-w: 260px;
-  --radius: 5px;
+  --radius: 8px;
 }
 
 *,
@@ -111,14 +111,14 @@ textarea {
   align-items: center;
   gap: 2px;
   background: var(--bg-input);
-  border: 1px solid var(--border-input);
+  border: none;
   border-radius: var(--radius);
-  padding: 0 6px;
-  height: 28px;
+  padding: 0 8px;
+  height: 34px;
 }
 
 .dim-input-pair:focus-within {
-  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px var(--border-focus);
 }
 
 .dim-input-pair.compact {
@@ -160,23 +160,25 @@ textarea {
 
 .text-input {
   width: 100%;
-  height: 28px;
-  padding: 0 8px;
+  height: 34px;
+  padding: 0 10px;
   background: var(--bg-input);
-  border: 1px solid var(--border-input);
+  border: none;
   border-radius: var(--radius);
   outline: none;
 }
 
 .text-input:focus {
-  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px var(--border-focus);
 }
 
+
+
 .select-input {
-  height: 28px;
-  padding: 0 22px 0 8px;
+  height: 34px;
+  padding: 0 22px 0 10px;
   background: var(--bg-input);
-  border: 1px solid var(--border-input);
+  border: none;
   border-radius: var(--radius);
   outline: none;
   cursor: pointer;
@@ -184,17 +186,17 @@ textarea {
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg width='8' height='5' viewBox='0 0 8 5' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l3 3 3-3' stroke='%23999' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 6px center;
+  background-position: right 8px center;
 }
 
 .select-input:focus {
-  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px var(--border-focus);
 }
 
 .color-input {
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--border-input);
+  width: 34px;
+  height: 34px;
+  border: none;
   border-radius: var(--radius);
   background: none;
   cursor: pointer;
@@ -203,12 +205,12 @@ textarea {
 }
 
 .color-input::-webkit-color-swatch-wrapper {
-  padding: 2px;
+  padding: 3px;
 }
 
 .color-input::-webkit-color-swatch {
   border: none;
-  border-radius: 3px;
+  border-radius: 5px;
 }
 
 .color-pick-row {
@@ -242,8 +244,8 @@ textarea {
   align-items: center;
   justify-content: center;
   gap: 5px;
-  height: 28px;
-  padding: 0 10px;
+  height: 34px;
+  padding: 0 12px;
   border: none;
   border-radius: var(--radius);
   font-size: 12px;
@@ -261,8 +263,8 @@ textarea {
 }
 
 .btn-sm {
-  height: 24px;
-  padding: 0 8px;
+  height: 30px;
+  padding: 0 10px;
   font-size: 11px;
 }
 
@@ -284,7 +286,7 @@ textarea {
   background: var(--accent);
   color: #fff;
   font-weight: 600;
-  height: 32px;
+  height: 36px;
   font-size: 13px;
 }
 
@@ -307,8 +309,8 @@ textarea {
   background: transparent;
   color: var(--text-secondary);
   gap: 4px;
-  padding: 0 8px;
-  height: 28px;
+  padding: 0 10px;
+  height: 34px;
 }
 
 .btn-tool:hover {
@@ -346,8 +348,8 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   background: none;
   border: none;
   border-radius: var(--radius);
@@ -492,15 +494,40 @@ textarea {
   flex-shrink: 0;
 }
 
-#sidebar::-webkit-scrollbar {
+#left-sidebar {
+  width: var(--sidebar-w);
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+#left-sidebar .panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+#left-sidebar .layers-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+#sidebar::-webkit-scrollbar,
+#left-sidebar::-webkit-scrollbar {
   width: 4px;
 }
 
-#sidebar::-webkit-scrollbar-track {
+#sidebar::-webkit-scrollbar-track,
+#left-sidebar::-webkit-scrollbar-track {
   background: transparent;
 }
 
-#sidebar::-webkit-scrollbar-thumb {
+#sidebar::-webkit-scrollbar-thumb,
+#left-sidebar::-webkit-scrollbar-thumb {
   background: #d0d0d0;
   border-radius: 10px;
 }
@@ -526,18 +553,18 @@ textarea {
 
 /* ─── Properties ───────────────────────────────────── */
 .panel-body {
-  padding: 0 16px 12px;
+  padding: 4px 16px 14px;
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 4px;
 }
 
 .prop-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 32px;
-  padding: 2px 0;
+  min-height: 36px;
+  padding: 3px 0;
 }
 
 .prop-row>label {
@@ -664,6 +691,12 @@ textarea {
   gap: 6px;
   margin-top: 8px;
   padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+/* ─── Panel Footer ─────────────────────────────────── */
+.panel-footer {
+  padding: 8px 16px 12px;
   border-top: 1px solid var(--border);
 }
 

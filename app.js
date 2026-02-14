@@ -49,12 +49,19 @@
 
   const $btnDeleteEdit = document.getElementById('btnDeleteEdit');
   const $btnCloseEdit = document.getElementById('btnCloseEdit');
+  const $btnDuplicateEdit = document.getElementById('btnDuplicateEdit');
+  const $btnClearAll = document.getElementById('btnClearAll');
+  const $editPresetColors = document.getElementById('editPresetColors');
 
   const PRESET_COLORS = [
     '#6C5CE7', '#0984E3', '#00B894', '#FDCB6E',
     '#E17055', '#D63031', '#E84393', '#636E72',
     '#2D3436', '#74B9FF', '#55EFC4', '#FAB1A0'
   ];
+
+  function randomColor() {
+    return PRESET_COLORS[Math.floor(Math.random() * PRESET_COLORS.length)];
+  }
 
   // ─── State ───────────────────────────────────────────
   let state = {
@@ -76,6 +83,18 @@
   let measureEnd = null;     // {x, y} in plot inches
   let measureLive = null;    // live cursor pos while measuring
   let shiftHeld = false;
+
+  // Pan/zoom state
+  let panning = false;
+  let panStartX = 0, panStartY = 0;
+  let spaceHeld = false;
+  const MIN_SCALE = 0.1;
+  const MAX_SCALE = 20;
+
+  // Resize state
+  let resizing = null;  // { block, handle, startX, startY, origX, origY, origW, origH }
+  const HANDLE_SIZE = 5; // half-size in canvas px
+  const MIN_BLOCK_SIZE = 12; // minimum inner dimension in inches (1 ft)
 
   // ─── Helpers ─────────────────────────────────────────
   function ftInToInches(ft, inc) {
@@ -142,6 +161,7 @@
   }
 
   function buildPresetColors() {
+    // Create panel presets
     $presetColors.innerHTML = '';
     PRESET_COLORS.forEach(c => {
       const el = document.createElement('div');
@@ -149,6 +169,18 @@
       el.style.background = c;
       el.addEventListener('click', () => { $blockColor.value = c; });
       $presetColors.appendChild(el);
+    });
+    // Edit panel presets
+    $editPresetColors.innerHTML = '';
+    PRESET_COLORS.forEach(c => {
+      const el = document.createElement('div');
+      el.className = 'preset-swatch';
+      el.style.background = c;
+      el.addEventListener('click', () => {
+        $editColor.value = c;
+        applyEdit();
+      });
+      $editPresetColors.appendChild(el);
     });
   }
 
@@ -159,18 +191,35 @@
     $canvas.width = rect.width * dpr;
     $canvas.height = rect.height * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    recalcScale();
+    // On first load, fit to view; on resize, keep current zoom but re-center
+    if (scale === 1 && offsetX === 0 && offsetY === 0) {
+      fitToView();
+    }
     render();
   }
 
-  function recalcScale() {
+  function fitToView() {
     const rect = $container.getBoundingClientRect();
     const pw = state.plot.widthIn, ph = state.plot.heightIn;
     const padX = 100, padY = 100;
     scale = Math.min((rect.width - padX) / pw, (rect.height - padY) / ph);
     offsetX = (rect.width - pw * scale) / 2;
     offsetY = (rect.height - ph * scale) / 2;
+    updateZoomDisplay();
+  }
+
+  function updateZoomDisplay() {
     $zoomLevel.textContent = `${Math.round(scale * 100 / 2)}%`;
+  }
+
+  function zoomAtPoint(cx, cy, factor) {
+    const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * factor));
+    // Keep the point (cx, cy) fixed on screen
+    offsetX = cx - (cx - offsetX) * (newScale / scale);
+    offsetY = cy - (cy - offsetY) * (newScale / scale);
+    scale = newScale;
+    updateZoomDisplay();
+    render();
   }
 
   function canvasToPlot(cx, cy) {
@@ -298,12 +347,16 @@
     ctx.lineWidth = selected ? 1.5 : 1;
     ctx.strokeRect(iTl.x, iTl.y, iw, ih);
 
-    // Selection handles on outer rect
+    // Selection handles (8: corners + edge midpoints)
     if (selected) {
-      ctx.fillStyle = block.color;
-      const hs = 3;
-      [[oTl.x, oTl.y], [oTl.x + ow, oTl.y], [oTl.x, oTl.y + oh], [oTl.x + ow, oTl.y + oh]]
-        .forEach(([cx, cy]) => ctx.fillRect(cx - hs, cy - hs, hs * 2, hs * 2));
+      const handles = getResizeHandles(block);
+      handles.forEach(h => {
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(h.cx - HANDLE_SIZE, h.cy - HANDLE_SIZE, HANDLE_SIZE * 2, HANDLE_SIZE * 2);
+        ctx.strokeStyle = block.color;
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(h.cx - HANDLE_SIZE, h.cy - HANDLE_SIZE, HANDLE_SIZE * 2, HANDLE_SIZE * 2);
+      });
     }
 
     // Labels centered on inner rect
@@ -341,6 +394,38 @@
       ctx.textBaseline = 'middle';
       ctx.fillText(block.name || 'Room', labelCx, labelCy);
     }
+  }
+
+  // ─── Resize Handles ─────────────────────────────────
+  // Returns 8 handle positions in canvas coordinates: nw, n, ne, e, se, s, sw, w
+  function getResizeHandles(block) {
+    const or = outerRect(block);
+    const tl = plotToCanvas(or.x, or.y);
+    const ow = or.w * scale, oh = or.h * scale;
+    const mx = tl.x + ow / 2, my = tl.y + oh / 2;
+    return [
+      { id: 'nw', cx: tl.x,      cy: tl.y,      cursor: 'nwse-resize' },
+      { id: 'n',  cx: mx,         cy: tl.y,      cursor: 'ns-resize'   },
+      { id: 'ne', cx: tl.x + ow,  cy: tl.y,      cursor: 'nesw-resize' },
+      { id: 'e',  cx: tl.x + ow,  cy: my,         cursor: 'ew-resize'   },
+      { id: 'se', cx: tl.x + ow,  cy: tl.y + oh,  cursor: 'nwse-resize' },
+      { id: 's',  cx: mx,         cy: tl.y + oh,  cursor: 'ns-resize'   },
+      { id: 'sw', cx: tl.x,       cy: tl.y + oh,  cursor: 'nesw-resize' },
+      { id: 'w',  cx: tl.x,       cy: my,         cursor: 'ew-resize'   },
+    ];
+  }
+
+  // Returns handle object if (cx, cy) is over a resize handle of the selected block
+  function getResizeHandleAt(cx, cy) {
+    const block = state.blocks.find(b => b.id === state.selectedId);
+    if (!block) return null;
+    const handles = getResizeHandles(block);
+    for (const h of handles) {
+      if (Math.abs(cx - h.cx) <= HANDLE_SIZE + 2 && Math.abs(cy - h.cy) <= HANDLE_SIZE + 2) {
+        return { ...h, block };
+      }
+    }
+    return null;
   }
 
   // ─── Rotate Handle ─────────────────────────────────
@@ -492,7 +577,8 @@
     const name = $blockName.value.trim() || 'Room';
     const width = ftInToInches($blockLenFt.value, $blockLenIn.value) || 120;
     const height = ftInToInches($blockBreFt.value, $blockBreIn.value) || 96;
-    const color = $blockColor.value;
+    const color = randomColor();
+    $blockColor.value = color;
     const wallOverride = $blockWall.value !== '' ? parseFloat($blockWall.value) : null;
     const wt = wallOverride != null ? wallOverride : state.wallThicknessIn;
     // Place inner rect so the outer wall starts near the plot edge
@@ -510,6 +596,30 @@
   function deleteBlock(id) {
     state.blocks = state.blocks.filter(b => b.id !== id);
     if (state.selectedId === id) selectBlock(null);
+    saveState(); render(); updateLayersList();
+  }
+
+  function duplicateBlock(id) {
+    const src = state.blocks.find(b => b.id === id);
+    if (!src) return;
+    const wt = getWallThickness(src);
+    const clone = {
+      ...src,
+      id: state.nextId++,
+      name: src.name + ' copy',
+      x: snap(Math.min(src.x + 24, state.plot.widthIn - src.width)),
+      y: snap(Math.min(src.y + 24, state.plot.heightIn - src.height))
+    };
+    state.blocks.push(clone);
+    selectBlock(clone.id);
+    saveState(); render(); updateLayersList();
+  }
+
+  function clearAllBlocks() {
+    if (!state.blocks.length) return;
+    if (!confirm('Remove all rooms?')) return;
+    state.blocks = [];
+    selectBlock(null);
     saveState(); render(); updateLayersList();
   }
 
@@ -564,6 +674,7 @@
   function updateLayersList() {
     $layerCount.textContent = state.blocks.length;
     $emptyLayers.style.display = state.blocks.length ? 'none' : '';
+    $btnClearAll.style.display = state.blocks.length ? '' : 'none';
     $layersList.querySelectorAll('.layer-item').forEach(el => el.remove());
 
     for (const block of state.blocks) {
@@ -579,13 +690,20 @@
           <div class="layer-dims">${formatFtIn(block.width)} × ${formatFtIn(block.height)} · ${formatArea(area)}${wallLabel ? ' · ' + wallLabel : ''}</div>
         </div>
         <div class="layer-actions">
+          <button class="btn-icon layer-btn-dup" title="Duplicate">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
           <button class="btn-icon layer-btn-delete" title="Delete">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           </button>
         </div>`;
       el.addEventListener('click', (e) => {
         if (e.target.closest('.layer-btn-delete')) {
           if (confirm(`Delete "${block.name}"?`)) deleteBlock(block.id);
+          return;
+        }
+        if (e.target.closest('.layer-btn-dup')) {
+          duplicateBlock(block.id);
           return;
         }
         selectBlock(block.id);
@@ -698,6 +816,17 @@
   $canvas.addEventListener('mousedown', (e) => {
     const rect = $canvas.getBoundingClientRect();
     const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+
+    // Pan with space+click or middle mouse
+    if (spaceHeld || e.button === 1) {
+      e.preventDefault();
+      panning = true;
+      panStartX = e.clientX;
+      panStartY = e.clientY;
+      $canvas.style.cursor = 'grabbing';
+      return;
+    }
+
     const p = canvasToPlot(cx, cy);
 
     // Measure mode
@@ -724,7 +853,24 @@
       return;
     }
 
-    // Check rotate handle first
+    // Check resize handles first
+    const resizeHandle = getResizeHandleAt(cx, cy);
+    if (resizeHandle) {
+      resizing = {
+        block: resizeHandle.block,
+        handle: resizeHandle.id,
+        startX: cx,
+        startY: cy,
+        origX: resizeHandle.block.x,
+        origY: resizeHandle.block.y,
+        origW: resizeHandle.block.width,
+        origH: resizeHandle.block.height
+      };
+      $canvas.style.cursor = resizeHandle.cursor;
+      return;
+    }
+
+    // Check rotate handle
     if (isOnRotateHandle(cx, cy)) {
       rotateBlock(state.selectedId);
       return;
@@ -743,6 +889,16 @@
   });
 
   $canvas.addEventListener('mousemove', (e) => {
+    // Pan handling
+    if (panning) {
+      offsetX += e.clientX - panStartX;
+      offsetY += e.clientY - panStartY;
+      panStartX = e.clientX;
+      panStartY = e.clientY;
+      render();
+      return;
+    }
+
     const rect = $canvas.getBoundingClientRect();
     const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
     const p = canvasToPlot(cx, cy);
@@ -776,17 +932,67 @@
       dragging.y = ny;
       render();
       updateEditPanel();
+    } else if (resizing) {
+      const r = resizing;
+      const dxPx = cx - r.startX, dyPx = cy - r.startY;
+      const dxIn = dxPx / scale, dyIn = dyPx / scale;
+
+      let newX = r.origX, newY = r.origY;
+      let newW = r.origW, newH = r.origH;
+
+      // Apply deltas based on which handle
+      if (r.handle.includes('e')) { newW = r.origW + dxIn; }
+      if (r.handle.includes('w')) { newX = r.origX + dxIn; newW = r.origW - dxIn; }
+      if (r.handle.includes('s')) { newH = r.origH + dyIn; }
+      if (r.handle.includes('n')) { newY = r.origY + dyIn; newH = r.origH - dyIn; }
+
+      // Snap to grid
+      newX = snap(newX); newY = snap(newY);
+      newW = snap(newW); newH = snap(newH);
+
+      // Enforce minimum
+      if (newW < MIN_BLOCK_SIZE) { newW = MIN_BLOCK_SIZE; if (r.handle.includes('w')) newX = r.origX + r.origW - MIN_BLOCK_SIZE; }
+      if (newH < MIN_BLOCK_SIZE) { newH = MIN_BLOCK_SIZE; if (r.handle.includes('n')) newY = r.origY + r.origH - MIN_BLOCK_SIZE; }
+
+      // Constrain within plot
+      newX = Math.max(0, newX);
+      newY = Math.max(0, newY);
+      newW = Math.min(newW, state.plot.widthIn - newX);
+      newH = Math.min(newH, state.plot.heightIn - newY);
+
+      r.block.x = newX; r.block.y = newY;
+      r.block.width = newW; r.block.height = newH;
+      render(); updateEditPanel();
     } else if (!measureMode) {
-      if (isOnRotateHandle(cx, cy)) {
-        $canvas.style.cursor = 'pointer';
+      if (spaceHeld) {
+        $canvas.style.cursor = 'grab';
       } else {
-        const block = getBlockAt(p.x, p.y);
-        $canvas.style.cursor = block ? 'grab' : 'default';
+        // Check for resize handle hover
+        const rh = getResizeHandleAt(cx, cy);
+        if (rh) {
+          $canvas.style.cursor = rh.cursor;
+        } else if (isOnRotateHandle(cx, cy)) {
+          $canvas.style.cursor = 'pointer';
+        } else {
+          const block = getBlockAt(p.x, p.y);
+          $canvas.style.cursor = block ? 'grab' : 'default';
+        }
       }
     }
   });
 
-  $canvas.addEventListener('mouseup', () => {
+  $canvas.addEventListener('mouseup', (e) => {
+    if (panning) {
+      panning = false;
+      $canvas.style.cursor = spaceHeld ? 'grab' : 'default';
+      return;
+    }
+    if (resizing) {
+      resizing = null;
+      $canvas.style.cursor = 'default';
+      saveState(); updateLayersList();
+      return;
+    }
     if (dragging) {
       $canvas.style.cursor = 'grab';
       dragging = null;
@@ -795,6 +1001,17 @@
   });
 
   $canvas.addEventListener('mouseleave', () => {
+    if (panning) {
+      panning = false;
+      $canvas.style.cursor = 'default';
+      return;
+    }
+    if (resizing) {
+      resizing = null;
+      $canvas.style.cursor = 'default';
+      saveState(); updateLayersList();
+      return;
+    }
     if (dragging) {
       dragging = null;
       $canvas.style.cursor = 'default';
@@ -804,15 +1021,35 @@
 
   $canvas.addEventListener('contextmenu', (e) => {
     e.preventDefault();
+    if (spaceHeld) return;
     const rect = $canvas.getBoundingClientRect();
     const p = canvasToPlot(e.clientX - rect.left, e.clientY - rect.top);
     const block = getBlockAt(p.x, p.y);
     if (block) rotateBlock(block.id);
   });
 
+  // ─── Wheel Zoom ─────────────────────────────────────
+  $canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const rect = $canvas.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08;
+    zoomAtPoint(cx, cy, factor);
+  }, { passive: false });
+
   // ─── Keyboard ────────────────────────────────────────
   document.addEventListener('keydown', (e) => {
     shiftHeld = e.shiftKey;
+
+    // Space for pan mode
+    if (e.code === 'Space' && !spaceHeld) {
+      if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+      e.preventDefault();
+      spaceHeld = true;
+      $canvas.style.cursor = 'grab';
+      return;
+    }
 
     if (e.key === 'm' || e.key === 'M') {
       if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
@@ -830,9 +1067,32 @@
       const block = state.blocks.find(b => b.id === state.selectedId);
       if (block && confirm(`Delete "${block.name}"?`)) deleteBlock(state.selectedId);
     }
+
+    // Zoom shortcuts
+    if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+    if (e.key === '=' || e.key === '+') {
+      e.preventDefault();
+      const rect = $container.getBoundingClientRect();
+      zoomAtPoint(rect.width / 2, rect.height / 2, 1.2);
+    }
+    if (e.key === '-' || e.key === '_') {
+      e.preventDefault();
+      const rect = $container.getBoundingClientRect();
+      zoomAtPoint(rect.width / 2, rect.height / 2, 1 / 1.2);
+    }
+    if (e.key === '0' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      fitToView(); render();
+    }
   });
 
-  document.addEventListener('keyup', (e) => { shiftHeld = e.shiftKey; });
+  document.addEventListener('keyup', (e) => {
+    shiftHeld = e.shiftKey;
+    if (e.code === 'Space') {
+      spaceHeld = false;
+      if (!panning) $canvas.style.cursor = 'default';
+    }
+  });
 
   // ─── Plot Size ────────────────────────────────────────
   function applyPlotSize() {
@@ -845,7 +1105,7 @@
       block.x = Math.min(block.x, Math.max(0, w - block.width));
       block.y = Math.min(block.y, Math.max(0, h - block.height));
     }
-    recalcScale(); saveState(); render();
+    fitToView(); saveState(); render();
   }
 
   $snapSize.addEventListener('change', () => {
@@ -876,7 +1136,7 @@
       try {
         state = { ...state, ...JSON.parse(e.target.result) };
         loadState();
-        recalcScale(); saveState(); render(); updateLayersList(); selectBlock(null);
+        fitToView(); saveState(); render(); updateLayersList(); selectBlock(null);
       } catch (err) { alert('Invalid file.'); }
     };
     reader.readAsText(file);
@@ -1036,6 +1296,10 @@
     }
   });
   $btnCloseEdit.addEventListener('click', () => selectBlock(null));
+  $btnDuplicateEdit.addEventListener('click', () => {
+    if (state.selectedId) duplicateBlock(state.selectedId);
+  });
+  $btnClearAll.addEventListener('click', clearAllBlocks);
 
   // Auto-apply edits on any change
   const editInputs = [$editName, $editLenFt, $editLenIn, $editBreFt, $editBreIn, $editX, $editY, $editWall];
