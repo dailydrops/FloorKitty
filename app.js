@@ -20,6 +20,7 @@
   const $fileImport = document.getElementById('fileImport');
   const $btnMeasure = document.getElementById('btnMeasure');
   const $wallThickness = document.getElementById('wallThickness');
+  const $gridOpacity = document.getElementById('gridOpacity');
 
   const $blockName = document.getElementById('blockName');
   const $blockLenFt = document.getElementById('blockLenFt');
@@ -52,6 +53,8 @@
   const $btnDuplicateEdit = document.getElementById('btnDuplicateEdit');
   const $btnClearAll = document.getElementById('btnClearAll');
   const $editPresetColors = document.getElementById('editPresetColors');
+  const $btnAddDoor = document.getElementById('btnAddDoor');
+  const $doorsList = document.getElementById('doorsList');
 
   const PRESET_COLORS = [
     '#6C5CE7', '#0984E3', '#00B894', '#FDCB6E',
@@ -83,6 +86,7 @@
   let measureEnd = null;     // {x, y} in plot inches
   let measureLive = null;    // live cursor pos while measuring
   let shiftHeld = false;
+  let gridOpacity = 1;
 
   // Pan/zoom state
   let panning = false;
@@ -236,6 +240,7 @@
     ctx.clearRect(0, 0, rect.width, rect.height);
     drawGrid();
     for (const block of state.blocks) drawBlock(block, block.id === state.selectedId);
+    drawDoors();
     drawDimLabels();
 
     // Draw rotate icon on selected block
@@ -267,7 +272,7 @@
     ctx.strokeRect(tl.x, tl.y, plotW, plotH);
 
     // Minor grid (every 1 ft = 12in)
-    ctx.strokeStyle = 'rgba(0,0,0,0.04)';
+    ctx.strokeStyle = `rgba(0,0,0,${0.04 * gridOpacity})`;
     ctx.lineWidth = 0.5;
     for (let i = 12; i < pw; i += 12) {
       ctx.beginPath(); ctx.moveTo(tl.x + i * scale, tl.y); ctx.lineTo(tl.x + i * scale, tl.y + plotH); ctx.stroke();
@@ -277,7 +282,7 @@
     }
 
     // Major grid (every 5 ft = 60in)
-    ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+    ctx.strokeStyle = `rgba(0,0,0,${0.08 * gridOpacity})`;
     ctx.lineWidth = 1;
     for (let i = 60; i < pw; i += 60) {
       ctx.beginPath(); ctx.moveTo(tl.x + i * scale, tl.y); ctx.lineTo(tl.x + i * scale, tl.y + plotH); ctx.stroke();
@@ -393,6 +398,63 @@
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(block.name || 'Room', labelCx, labelCy);
+    }
+  }
+
+  // ─── Door Drawing ──────────────────────────────────
+  function drawDoors() {
+    for (const block of state.blocks) {
+      if (!block.doors || !block.doors.length) continue;
+      const wt = getWallThickness(block);
+      const selected = block.id === state.selectedId;
+
+      for (const door of block.doors) {
+        const dw = door.width || 36;
+        const off = door.offset || 0;
+        let gapX, gapY, gapW, gapH;
+        let tickA, tickB; // two tick-mark positions (perpendicular to wall)
+        const tickLen = Math.max(4, wt + 2); // tick extends slightly past wall
+
+        if (door.wall === 'top') {
+          gapX = block.x + off; gapY = block.y - wt;
+          gapW = dw; gapH = wt;
+          tickA = { x: gapX, y: block.y, dx: 0, dy: -tickLen };
+          tickB = { x: gapX + dw, y: block.y, dx: 0, dy: -tickLen };
+        } else if (door.wall === 'bottom') {
+          gapX = block.x + off; gapY = block.y + block.height;
+          gapW = dw; gapH = wt;
+          tickA = { x: gapX, y: block.y + block.height, dx: 0, dy: tickLen };
+          tickB = { x: gapX + dw, y: block.y + block.height, dx: 0, dy: tickLen };
+        } else if (door.wall === 'left') {
+          gapX = block.x - wt; gapY = block.y + off;
+          gapW = wt; gapH = dw;
+          tickA = { x: block.x, y: gapY, dx: -tickLen, dy: 0 };
+          tickB = { x: block.x, y: gapY + dw, dx: -tickLen, dy: 0 };
+        } else { // right
+          gapX = block.x + block.width; gapY = block.y + off;
+          gapW = wt; gapH = dw;
+          tickA = { x: block.x + block.width, y: gapY, dx: tickLen, dy: 0 };
+          tickB = { x: block.x + block.width, y: gapY + dw, dx: tickLen, dy: 0 };
+        }
+
+        // Clear the wall gap
+        const gp = plotToCanvas(gapX, gapY);
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(gp.x - 0.5, gp.y - 0.5, gapW * scale + 1, gapH * scale + 1);
+
+        // Draw tick marks at gap edges
+        const color = selected ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.3)';
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        for (const t of [tickA, tickB]) {
+          const a = plotToCanvas(t.x, t.y);
+          const b = plotToCanvas(t.x + t.dx, t.y + t.dy);
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
+      }
     }
   }
 
@@ -584,7 +646,7 @@
     // Place inner rect so the outer wall starts near the plot edge
     const x = snap(Math.max(wt, Math.min(wt + 24, state.plot.widthIn - width - wt)));
     const y = snap(Math.max(wt, Math.min(wt + 24, state.plot.heightIn - height - wt)));
-    const block = { id: state.nextId++, name, x, y, width, height, color };
+    const block = { id: state.nextId++, name, x, y, width, height, color, doors: [] };
     if (wallOverride != null) block.wallThickness = wallOverride;
     state.blocks.push(block);
     selectBlock(state.nextId - 1);
@@ -608,7 +670,8 @@
       id: state.nextId++,
       name: src.name + ' copy',
       x: snap(Math.min(src.x + 24, state.plot.widthIn - src.width)),
-      y: snap(Math.min(src.y + 24, state.plot.heightIn - src.height))
+      y: snap(Math.min(src.y + 24, state.plot.heightIn - src.height)),
+      doors: (src.doors || []).map(d => ({ ...d }))
     };
     state.blocks.push(clone);
     selectBlock(clone.id);
@@ -650,6 +713,7 @@
       $editY.value = block.y;
       $editColor.value = block.color;
       $editWall.value = block.wallThickness != null ? block.wallThickness : '';
+      updateDoorsList(block);
     } else {
       $panelEdit.style.display = 'none';
     }
@@ -668,6 +732,61 @@
     block.x = Math.max(0, Math.min(block.x, state.plot.widthIn - block.width));
     block.y = Math.max(0, Math.min(block.y, state.plot.heightIn - block.height));
     saveState(); render(); updateLayersList();
+  }
+
+  // ─── Door Management ─────────────────────────────────
+  function addDoor(block) {
+    if (!block.doors) block.doors = [];
+    block.doors.push({ wall: 'bottom', offset: 12, width: 36 });
+    saveState(); render(); updateDoorsList(block);
+  }
+
+  function removeDoor(block, index) {
+    block.doors.splice(index, 1);
+    saveState(); render(); updateDoorsList(block);
+  }
+
+  function updateDoorsList(block) {
+    $doorsList.innerHTML = '';
+    if (!block.doors || !block.doors.length) return;
+
+    block.doors.forEach((door, i) => {
+      const el = document.createElement('div');
+      el.className = 'door-item';
+      el.innerHTML = `
+        <select class="door-wall" title="Wall">
+          <option value="top"${door.wall === 'top' ? ' selected' : ''}>Top</option>
+          <option value="right"${door.wall === 'right' ? ' selected' : ''}>Right</option>
+          <option value="bottom"${door.wall === 'bottom' ? ' selected' : ''}>Bottom</option>
+          <option value="left"${door.wall === 'left' ? ' selected' : ''}>Left</option>
+        </select>
+        <input type="number" class="dim-input door-offset" value="${door.offset}" min="0" title="Offset (inches from wall start)">
+        <span style="color:var(--text-muted);font-size:10px">off</span>
+        <input type="number" class="dim-input door-width" value="${door.width}" min="12" max="120" title="Door width (inches)">
+        <span style="color:var(--text-muted);font-size:10px">w</span>
+        <button class="btn-icon door-remove" title="Remove door">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      `;
+
+      el.querySelector('.door-wall').addEventListener('change', (e) => {
+        door.wall = e.target.value;
+        saveState(); render();
+      });
+      el.querySelector('.door-offset').addEventListener('input', (e) => {
+        door.offset = Math.max(0, parseInt(e.target.value, 10) || 0);
+        saveState(); render();
+      });
+      el.querySelector('.door-width').addEventListener('input', (e) => {
+        door.width = Math.max(12, parseInt(e.target.value, 10) || 36);
+        saveState(); render();
+      });
+      el.querySelector('.door-remove').addEventListener('click', () => {
+        removeDoor(block, i);
+      });
+
+      $doorsList.appendChild(el);
+    });
   }
 
   // ─── Layers List ─────────────────────────────────────
@@ -940,15 +1059,19 @@
       let newX = r.origX, newY = r.origY;
       let newW = r.origW, newH = r.origH;
 
-      // Apply deltas based on which handle
-      if (r.handle.includes('e')) { newW = r.origW + dxIn; }
-      if (r.handle.includes('w')) { newX = r.origX + dxIn; newW = r.origW - dxIn; }
-      if (r.handle.includes('s')) { newH = r.origH + dyIn; }
-      if (r.handle.includes('n')) { newY = r.origY + dyIn; newH = r.origH - dyIn; }
-
-      // Snap to grid
-      newX = snap(newX); newY = snap(newY);
-      newW = snap(newW); newH = snap(newH);
+      // Apply deltas and snap only the moving edge
+      if (r.handle.includes('e')) { newW = snap(r.origW + dxIn); }
+      if (r.handle.includes('w')) {
+        const snappedX = snap(r.origX + dxIn);
+        newW = r.origW + (r.origX - snappedX);
+        newX = snappedX;
+      }
+      if (r.handle.includes('s')) { newH = snap(r.origH + dyIn); }
+      if (r.handle.includes('n')) {
+        const snappedY = snap(r.origY + dyIn);
+        newH = r.origH + (r.origY - snappedY);
+        newY = snappedY;
+      }
 
       // Enforce minimum
       if (newW < MIN_BLOCK_SIZE) { newW = MIN_BLOCK_SIZE; if (r.handle.includes('w')) newX = r.origX + r.origW - MIN_BLOCK_SIZE; }
@@ -1118,6 +1241,11 @@
     saveState(); render(); updateLayersList();
   });
 
+  $gridOpacity.addEventListener('input', () => {
+    gridOpacity = parseInt($gridOpacity.value, 10) / 100;
+    render();
+  });
+
   // ─── Import / Export ────────────────────────────────
   function exportData() {
     const data = JSON.stringify(state, null, 2);
@@ -1163,11 +1291,11 @@
     oc.strokeRect(padding, padding, pw * ppi, ph * ppi);
 
     // Grids
-    oc.strokeStyle = 'rgba(0,0,0,0.04)';
+    oc.strokeStyle = `rgba(0,0,0,${0.04 * gridOpacity})`;
     oc.lineWidth = 0.5;
     for (let i = 12; i < pw; i += 12) { oc.beginPath(); oc.moveTo(padding + i * ppi, padding); oc.lineTo(padding + i * ppi, padding + ph * ppi); oc.stroke(); }
     for (let j = 12; j < ph; j += 12) { oc.beginPath(); oc.moveTo(padding, padding + j * ppi); oc.lineTo(padding + pw * ppi, padding + j * ppi); oc.stroke(); }
-    oc.strokeStyle = 'rgba(0,0,0,0.08)';
+    oc.strokeStyle = `rgba(0,0,0,${0.08 * gridOpacity})`;
     oc.lineWidth = 1;
     for (let i = 60; i < pw; i += 60) { oc.beginPath(); oc.moveTo(padding + i * ppi, padding); oc.lineTo(padding + i * ppi, padding + ph * ppi); oc.stroke(); }
     for (let j = 60; j < ph; j += 60) { oc.beginPath(); oc.moveTo(padding, padding + j * ppi); oc.lineTo(padding + pw * ppi, padding + j * ppi); oc.stroke(); }
@@ -1258,6 +1386,23 @@
   $btnImport.addEventListener('click', () => $fileImport.click());
   $btnMeasure.addEventListener('click', toggleMeasureMode);
 
+  // Help modal
+  const $helpModal = document.getElementById('helpModal');
+  document.getElementById('btnHelp').addEventListener('click', () => {
+    $helpModal.style.display = 'flex';
+  });
+  document.getElementById('btnCloseHelp').addEventListener('click', () => {
+    $helpModal.style.display = 'none';
+  });
+  $helpModal.addEventListener('click', (e) => {
+    if (e.target === $helpModal) $helpModal.style.display = 'none';
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $helpModal.style.display !== 'none') {
+      $helpModal.style.display = 'none';
+    }
+  });
+
   // Consolidated Export Menu
   const $exportDropdown = document.getElementById('exportDropdown');
   const $btnExportMenu = document.getElementById('btnExportMenu');
@@ -1300,6 +1445,10 @@
     if (state.selectedId) duplicateBlock(state.selectedId);
   });
   $btnClearAll.addEventListener('click', clearAllBlocks);
+  $btnAddDoor.addEventListener('click', () => {
+    const block = state.blocks.find(b => b.id === state.selectedId);
+    if (block) addDoor(block);
+  });
 
   // Auto-apply edits on any change
   const editInputs = [$editName, $editLenFt, $editLenIn, $editBreFt, $editBreIn, $editX, $editY, $editWall];
