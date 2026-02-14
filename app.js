@@ -19,6 +19,7 @@
   const $btnImport = document.getElementById('btnImport');
   const $fileImport = document.getElementById('fileImport');
   const $btnMeasure = document.getElementById('btnMeasure');
+  const $wallThickness = document.getElementById('wallThickness');
 
   const $blockName = document.getElementById('blockName');
   const $blockLenFt = document.getElementById('blockLenFt');
@@ -26,6 +27,7 @@
   const $blockBreFt = document.getElementById('blockBreFt');
   const $blockBreIn = document.getElementById('blockBreIn');
   const $blockColor = document.getElementById('blockColor');
+  const $blockWall = document.getElementById('blockWall');
   const $presetColors = document.getElementById('presetColors');
   const $btnAddBlock = document.getElementById('btnAddBlock');
 
@@ -42,6 +44,7 @@
   const $editX = document.getElementById('editX');
   const $editY = document.getElementById('editY');
   const $editColor = document.getElementById('editColor');
+  const $editWall = document.getElementById('editWall');
   const $btnRotateEdit = document.getElementById('btnRotateEdit');
 
   const $btnDeleteEdit = document.getElementById('btnDeleteEdit');
@@ -59,6 +62,7 @@
     blocks: [],
     selectedId: null,
     snapInches: 12,
+    wallThicknessIn: 6,
     nextId: 1
   };
 
@@ -103,6 +107,22 @@
     return sqft >= 10 ? `${Math.round(sqft)} sq ft` : `${sqft.toFixed(1)} sq ft`;
   }
 
+  // Wall thickness helpers
+  // width/height = inner (usable) dimensions; walls extend outward
+  function getWallThickness(block) {
+    return (block.wallThickness != null) ? block.wallThickness : state.wallThicknessIn;
+  }
+
+  function outerRect(block) {
+    const wt = getWallThickness(block);
+    return {
+      x: block.x - wt,
+      y: block.y - wt,
+      w: block.width + 2 * wt,
+      h: block.height + 2 * wt
+    };
+  }
+
   // ─── Persistence ─────────────────────────────────────
   function saveState() {
     localStorage.setItem('floorPlanner', JSON.stringify(state));
@@ -118,6 +138,7 @@
     $plotHeightFt.value = Math.floor(state.plot.heightIn / 12);
     $plotHeightIn.value = state.plot.heightIn % 12;
     $snapSize.value = state.snapInches;
+    $wallThickness.value = state.wallThicknessIn;
   }
 
   function buildPresetColors() {
@@ -243,57 +264,82 @@
   }
 
   // ─── Block Drawing ──────────────────────────────────
+  // width/height = inner (usable) space; walls extend outward
   function drawBlock(block, selected) {
-    const tl = plotToCanvas(block.x, block.y);
-    const w = block.width * scale, h = block.height * scale;
+    const wt = getWallThickness(block);
+    const or = outerRect(block);
 
-    ctx.fillStyle = hexToRgba(block.color, selected ? 0.22 : 0.12);
-    ctx.fillRect(tl.x, tl.y, w, h);
+    // Canvas coordinates for outer & inner rects
+    const oTl = plotToCanvas(or.x, or.y);
+    const ow = or.w * scale, oh = or.h * scale;
+    const iTl = plotToCanvas(block.x, block.y);
+    const iw = block.width * scale, ih = block.height * scale;
+    const wtPx = wt * scale;
 
-    ctx.strokeStyle = hexToRgba(block.color, selected ? 0.85 : 0.4);
-    ctx.lineWidth = selected ? 2 : 1;
-    ctx.strokeRect(tl.x, tl.y, w, h);
+    // Draw wall band (outer fill — darker tint)
+    if (wt > 0) {
+      ctx.fillStyle = hexToRgba(block.color, selected ? 0.32 : 0.22);
+      ctx.fillRect(oTl.x, oTl.y, ow, oh);
+    }
 
-    // Selection handles
+    // Draw inner floor (lighter)
+    ctx.fillStyle = hexToRgba(block.color, selected ? 0.10 : 0.05);
+    ctx.fillRect(iTl.x, iTl.y, iw, ih);
+
+    // Outer stroke
+    if (wt > 0) {
+      ctx.strokeStyle = hexToRgba(block.color, selected ? 0.85 : 0.4);
+      ctx.lineWidth = selected ? 2 : 1;
+      ctx.strokeRect(oTl.x, oTl.y, ow, oh);
+    }
+
+    // Inner stroke (wall edge / room boundary)
+    ctx.strokeStyle = hexToRgba(block.color, selected ? 0.6 : 0.3);
+    ctx.lineWidth = selected ? 1.5 : 1;
+    ctx.strokeRect(iTl.x, iTl.y, iw, ih);
+
+    // Selection handles on outer rect
     if (selected) {
       ctx.fillStyle = block.color;
       const hs = 3;
-      [[tl.x, tl.y], [tl.x + w, tl.y], [tl.x, tl.y + h], [tl.x + w, tl.y + h]]
+      [[oTl.x, oTl.y], [oTl.x + ow, oTl.y], [oTl.x, oTl.y + oh], [oTl.x + ow, oTl.y + oh]]
         .forEach(([cx, cy]) => ctx.fillRect(cx - hs, cy - hs, hs * 2, hs * 2));
     }
 
-    // Labels inside block
-    const cx = tl.x + w / 2, cy = tl.y + h / 2;
+    // Labels centered on inner rect
+    const labelCx = iTl.x + iw / 2, labelCy = iTl.y + ih / 2;
     const area = areaInSqFt(block.width, block.height);
 
-    if (w > 60 && h > 40) {
+    if (iw > 60 && ih > 50) {
       // Name
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.font = '600 11px -apple-system, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(block.name || 'Room', cx, cy - 14);
-      // Dimensions
+      ctx.fillText(block.name || 'Room', labelCx, labelCy - 14);
+      // Dimensions (these ARE inner/usable)
       ctx.fillStyle = 'rgba(0,0,0,0.3)';
       ctx.font = '10px -apple-system, sans-serif';
-      ctx.fillText(`${formatFtIn(block.width)} × ${formatFtIn(block.height)}`, cx, cy);
+      ctx.fillText(`${formatFtIn(block.width)} × ${formatFtIn(block.height)}`, labelCx, labelCy);
       // Area
-      ctx.fillText(formatArea(area), cx, cy + 13);
-    } else if (w > 40 && h > 25) {
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.font = '500 10px -apple-system, sans-serif';
+      ctx.fillText(formatArea(area), labelCx, labelCy + 13);
+    } else if (iw > 40 && ih > 30) {
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.font = '500 10px -apple-system, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(block.name || 'Room', cx, cy - 6);
-      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillText(block.name || 'Room', labelCx, labelCy - 6);
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
       ctx.font = '9px -apple-system, sans-serif';
-      ctx.fillText(formatArea(area), cx, cy + 6);
-    } else if (w > 30) {
+      ctx.fillText(formatArea(area), labelCx, labelCy + 6);
+    } else if (iw > 30) {
       ctx.fillStyle = 'rgba(0,0,0,0.4)';
       ctx.font = '9px -apple-system, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(block.name || 'Room', cx, cy);
+      ctx.fillText(block.name || 'Room', labelCx, labelCy);
     }
   }
 
@@ -302,13 +348,15 @@
   const ROTATE_OFFSET = 20; // pixels above top-right
 
   function getRotateHandlePos(block) {
-    const tl = plotToCanvas(block.x + block.width, block.y);
+    const or = outerRect(block);
+    const tl = plotToCanvas(or.x + or.w, or.y);
     return { x: tl.x, y: tl.y - ROTATE_OFFSET };
   }
 
   function drawRotateHandle(block) {
     const pos = getRotateHandlePos(block);
-    const tl = plotToCanvas(block.x + block.width, block.y);
+    const or = outerRect(block);
+    const tl = plotToCanvas(or.x + or.w, or.y);
 
     // Stem line
     ctx.strokeStyle = 'rgba(0,0,0,0.15)';
@@ -439,14 +487,20 @@
   }
 
   // ─── Blocks ──────────────────────────────────────────
+  // width/height = inner usable dimensions. x/y = inner top-left.
   function addBlock() {
     const name = $blockName.value.trim() || 'Room';
     const width = ftInToInches($blockLenFt.value, $blockLenIn.value) || 120;
     const height = ftInToInches($blockBreFt.value, $blockBreIn.value) || 96;
     const color = $blockColor.value;
-    const x = snap(Math.min(24, state.plot.widthIn - width));
-    const y = snap(Math.min(24, state.plot.heightIn - height));
-    state.blocks.push({ id: state.nextId++, name, x, y, width, height, color });
+    const wallOverride = $blockWall.value !== '' ? parseFloat($blockWall.value) : null;
+    const wt = wallOverride != null ? wallOverride : state.wallThicknessIn;
+    // Place inner rect so the outer wall starts near the plot edge
+    const x = snap(Math.max(wt, Math.min(wt + 24, state.plot.widthIn - width - wt)));
+    const y = snap(Math.max(wt, Math.min(wt + 24, state.plot.heightIn - height - wt)));
+    const block = { id: state.nextId++, name, x, y, width, height, color };
+    if (wallOverride != null) block.wallThickness = wallOverride;
+    state.blocks.push(block);
     selectBlock(state.nextId - 1);
     saveState();
     render();
@@ -485,6 +539,7 @@
       $editX.value = block.x;
       $editY.value = block.y;
       $editColor.value = block.color;
+      $editWall.value = block.wallThickness != null ? block.wallThickness : '';
     } else {
       $panelEdit.style.display = 'none';
     }
@@ -499,6 +554,7 @@
     block.x = parseInt($editX.value, 10) || 0;
     block.y = parseInt($editY.value, 10) || 0;
     block.color = $editColor.value;
+    block.wallThickness = $editWall.value !== '' ? parseFloat($editWall.value) : null;
     block.x = Math.max(0, Math.min(block.x, state.plot.widthIn - block.width));
     block.y = Math.max(0, Math.min(block.y, state.plot.heightIn - block.height));
     saveState(); render(); updateLayersList();
@@ -514,11 +570,13 @@
       const el = document.createElement('div');
       el.className = 'layer-item' + (block.id === state.selectedId ? ' selected' : '');
       const area = areaInSqFt(block.width, block.height);
+      const wt = getWallThickness(block);
+      const wallLabel = block.wallThickness != null ? `${wt}" wall` : '';
       el.innerHTML = `
         <div class="layer-swatch" style="background:${block.color}"></div>
         <div class="layer-info">
           <div class="layer-name">${block.name}</div>
-          <div class="layer-dims">${formatFtIn(block.width)} × ${formatFtIn(block.height)} · ${formatArea(area)}</div>
+          <div class="layer-dims">${formatFtIn(block.width)} × ${formatFtIn(block.height)} · ${formatArea(area)}${wallLabel ? ' · ' + wallLabel : ''}</div>
         </div>
         <div class="layer-actions">
           <button class="btn-icon layer-btn-delete" title="Delete">
@@ -537,20 +595,22 @@
   }
 
   // ─── Snap to Block Edges ────────────────────────────
+  // Snaps to outer edges of blocks (walls) + plot boundary
   function snapToBlocks(plotPt) {
     const SNAP_DIST = 12; // inches
     let best = null, bestDist = SNAP_DIST;
 
-    // Find nearest point on any block edge
     for (const b of state.blocks) {
+      const or = outerRect(b);
       const edges = [
-        // top edge
+        { x: clamp(plotPt.x, or.x, or.x + or.w), y: or.y },
+        { x: clamp(plotPt.x, or.x, or.x + or.w), y: or.y + or.h },
+        { x: or.x, y: clamp(plotPt.y, or.y, or.y + or.h) },
+        { x: or.x + or.w, y: clamp(plotPt.y, or.y, or.y + or.h) },
+        // Also snap to inner edges
         { x: clamp(plotPt.x, b.x, b.x + b.width), y: b.y },
-        // bottom edge
         { x: clamp(plotPt.x, b.x, b.x + b.width), y: b.y + b.height },
-        // left edge
         { x: b.x, y: clamp(plotPt.y, b.y, b.y + b.height) },
-        // right edge
         { x: b.x + b.width, y: clamp(plotPt.y, b.y, b.y + b.height) }
       ];
       for (const pt of edges) {
@@ -577,11 +637,60 @@
 
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
+  // ─── Wall-Aware Drag Snap ─────────────────────────────
+  // When dragging a block, snap its inner edges so they're
+  // exactly one wall-thickness from neighboring inner edges
+  // → creates shared walls automatically.
+  function wallAwareSnap(block, nx, ny) {
+    const wt = getWallThickness(block);
+    const THRESHOLD = 12; // inches proximity to trigger wall snap
+    let sx = nx, sy = ny;
+    let bestDx = THRESHOLD, bestDy = THRESHOLD;
+
+    for (const other of state.blocks) {
+      if (other.id === block.id) continue;
+      const owt = getWallThickness(other);
+      const sharedWt = Math.max(wt, owt); // shared wall = thicker of the two
+
+      // Horizontal snaps (x-axis)
+      // My left edge near other's right edge → shared wall
+      const d1 = Math.abs(nx - (other.x + other.width + sharedWt));
+      if (d1 < bestDx) { bestDx = d1; sx = other.x + other.width + sharedWt; }
+      // My right edge near other's left edge → shared wall
+      const d2 = Math.abs((nx + block.width + sharedWt) - other.x);
+      if (d2 < bestDx) { bestDx = d2; sx = other.x - block.width - sharedWt; }
+      // Align inner left edges
+      const d3 = Math.abs(nx - other.x);
+      if (d3 < bestDx) { bestDx = d3; sx = other.x; }
+      // Align inner right edges
+      const d4 = Math.abs((nx + block.width) - (other.x + other.width));
+      if (d4 < bestDx) { bestDx = d4; sx = other.x + other.width - block.width; }
+
+      // Vertical snaps (y-axis)
+      // My top near other's bottom → shared wall
+      const d5 = Math.abs(ny - (other.y + other.height + sharedWt));
+      if (d5 < bestDy) { bestDy = d5; sy = other.y + other.height + sharedWt; }
+      // My bottom near other's top → shared wall
+      const d6 = Math.abs((ny + block.height + sharedWt) - other.y);
+      if (d6 < bestDy) { bestDy = d6; sy = other.y - block.height - sharedWt; }
+      // Align inner top edges
+      const d7 = Math.abs(ny - other.y);
+      if (d7 < bestDy) { bestDy = d7; sy = other.y; }
+      // Align inner bottom edges
+      const d8 = Math.abs((ny + block.height) - (other.y + other.height));
+      if (d8 < bestDy) { bestDy = d8; sy = other.y + other.height - block.height; }
+    }
+
+    return { x: sx, y: sy };
+  }
+
   // ─── Canvas Interaction ──────────────────────────────
+  // Hit-test against outer rect (walls) for easier clicking
   function getBlockAt(px, py) {
     for (let i = state.blocks.length - 1; i >= 0; i--) {
       const b = state.blocks[i];
-      if (px >= b.x && px <= b.x + b.width && py >= b.y && py <= b.y + b.height) return b;
+      const or = outerRect(b);
+      if (px >= or.x && px <= or.x + or.w && py >= or.y && py <= or.y + or.h) return b;
     }
     return null;
   }
@@ -657,6 +766,10 @@
 
     if (dragging) {
       let nx = snap(p.x - dragOffsetX), ny = snap(p.y - dragOffsetY);
+      // Wall-aware snap to neighbors
+      const ws = wallAwareSnap(dragging, nx, ny);
+      nx = ws.x; ny = ws.y;
+      // Constrain inner rect within plot
       nx = Math.max(0, Math.min(nx, state.plot.widthIn - dragging.width));
       ny = Math.max(0, Math.min(ny, state.plot.heightIn - dragging.height));
       dragging.x = nx;
@@ -740,6 +853,11 @@
     saveState();
   });
 
+  $wallThickness.addEventListener('input', () => {
+    state.wallThicknessIn = parseFloat($wallThickness.value) || 0;
+    saveState(); render(); updateLayersList();
+  });
+
   // ─── Import / Export ────────────────────────────────
   function exportData() {
     const data = JSON.stringify(state, null, 2);
@@ -802,19 +920,44 @@
     oc.textAlign = 'right';
     for (let j = 0; j <= ph; j += 60) oc.fillText(`${j / 12}'`, padding - 6, padding + j * ppi + 4);
 
-    // Blocks
+    // Blocks (walls extend outward from inner rect)
     for (const block of state.blocks) {
-      const bx = padding + block.x * ppi, by = padding + block.y * ppi;
-      const bw = block.width * ppi, bh = block.height * ppi;
-      oc.fillStyle = hexToRgba(block.color, 0.15);
-      oc.fillRect(bx, by, bw, bh);
-      oc.strokeStyle = hexToRgba(block.color, 0.5);
-      oc.lineWidth = 1.5;
-      oc.strokeRect(bx, by, bw, bh);
+      const wt = getWallThickness(block);
+      const or = outerRect(block);
 
-      const cx = bx + bw / 2, cy = by + bh / 2;
+      // Outer rect (wall) in PNG coords
+      const ox = padding + or.x * ppi, oy = padding + or.y * ppi;
+      const ow = or.w * ppi, oh = or.h * ppi;
+      // Inner rect (floor)
+      const ix = padding + block.x * ppi, iy = padding + block.y * ppi;
+      const iw = block.width * ppi, ih = block.height * ppi;
+
+      // Wall fill
+      if (wt > 0) {
+        oc.fillStyle = hexToRgba(block.color, 0.25);
+        oc.fillRect(ox, oy, ow, oh);
+      }
+
+      // Inner floor
+      oc.fillStyle = hexToRgba(block.color, 0.06);
+      oc.fillRect(ix, iy, iw, ih);
+
+      // Outer stroke
+      if (wt > 0) {
+        oc.strokeStyle = hexToRgba(block.color, 0.5);
+        oc.lineWidth = 1.5;
+        oc.strokeRect(ox, oy, ow, oh);
+      }
+
+      // Inner stroke
+      oc.strokeStyle = hexToRgba(block.color, 0.3);
+      oc.lineWidth = 1;
+      oc.strokeRect(ix, iy, iw, ih);
+
+      // Labels centered on inner rect
+      const cx = ix + iw / 2, cy = iy + ih / 2;
       const area = areaInSqFt(block.width, block.height);
-      if (bw > 50 && bh > 36) {
+      if (iw > 50 && ih > 50) {
         oc.fillStyle = 'rgba(0,0,0,0.6)';
         oc.font = '500 11px -apple-system, sans-serif';
         oc.textAlign = 'center';
@@ -895,7 +1038,7 @@
   $btnCloseEdit.addEventListener('click', () => selectBlock(null));
 
   // Auto-apply edits on any change
-  const editInputs = [$editName, $editLenFt, $editLenIn, $editBreFt, $editBreIn, $editX, $editY];
+  const editInputs = [$editName, $editLenFt, $editLenIn, $editBreFt, $editBreIn, $editX, $editY, $editWall];
   editInputs.forEach(el => el.addEventListener('input', applyEdit));
   $editColor.addEventListener('input', applyEdit);
 
