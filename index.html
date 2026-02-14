@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Floor Planner</title>
+  <meta name="description" content="Plan your rooms on a floor with drag-and-drop blocks, snapping, rotation, and layers management.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- ═══ TOP TOOLBAR ═══ -->
+    <header id="toolbar">
+      <div class="toolbar-section">
+        <label class="toolbar-label">Plot Size</label>
+        <div class="dimension-group">
+          <div class="dim-input-pair">
+            <input type="number" id="plotWidthFt" min="1" max="500" value="40" class="dim-input" title="Width Feet">
+            <span class="dim-unit">ft</span>
+            <input type="number" id="plotWidthIn" min="0" max="11" value="0" class="dim-input dim-input-sm" title="Width Inches">
+            <span class="dim-unit">in</span>
+          </div>
+          <span class="dim-x">×</span>
+          <div class="dim-input-pair">
+            <input type="number" id="plotHeightFt" min="1" max="500" value="30" class="dim-input" title="Height Feet">
+            <span class="dim-unit">ft</span>
+            <input type="number" id="plotHeightIn" min="0" max="11" value="0" class="dim-input dim-input-sm" title="Height Inches">
+            <span class="dim-unit">in</span>
+          </div>
+          <button id="btnApplyPlot" class="btn btn-primary btn-sm" title="Apply plot size">Apply</button>
+        </div>
+      </div>
+
+      <div class="toolbar-divider"></div>
+
+      <div class="toolbar-section">
+        <label class="toolbar-label">Snap</label>
+        <select id="snapSize" class="select-input">
+          <option value="1">1 in</option>
+          <option value="3">3 in</option>
+          <option value="6" selected>6 in</option>
+          <option value="12">1 ft</option>
+        </select>
+      </div>
+
+      <div class="toolbar-divider"></div>
+
+      <div class="toolbar-section toolbar-actions">
+        <button id="btnImport" class="btn btn-tool" title="Import File">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Import
+        </button>
+        <div class="dropdown" id="exportDropdown">
+          <button id="btnExportMenu" class="btn btn-primary" title="Export">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Export
+            <svg viewBox="0 0 10 6" fill="none" class="chevron" style="opacity:0.7"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </button>
+          <div class="dropdown-menu" id="exportMenu" style="width:200px">
+            <div class="dropdown-section-title">Configuration</div>
+            <button class="dropdown-item" id="optExportJson">
+              <span>JSON File</span>
+              <span class="dropdown-hint">.json</span>
+            </button>
+            <div class="dropdown-divider"></div>
+            <div class="dropdown-section-title">Image Export</div>
+            <button class="dropdown-item" data-scale="1">
+              <span>PNG @ 1x</span>
+              <span class="dropdown-hint">Standard</span>
+            </button>
+            <button class="dropdown-item" data-scale="2">
+              <span>PNG @ 2x</span>
+              <span class="dropdown-hint">Retina</span>
+            </button>
+            <button class="dropdown-item" data-scale="4">
+              <span>PNG @ 4x</span>
+              <span class="dropdown-hint">Print</span>
+            </button>
+          </div>
+        </div>
+        <input type="file" id="fileImport" accept=".json" hidden>
+      </div>
+    </header>
+
+    <!-- ═══ MAIN CONTENT ═══ -->
+    <main id="workspace">
+      <!-- Canvas Area -->
+      <div id="canvas-container">
+        <canvas id="floorCanvas"></canvas>
+        <div id="canvas-info">
+          <span id="cursorPos">0' 0" × 0' 0"</span>
+          <span id="zoomLevel">100%</span>
+        </div>
+      </div>
+
+      <!-- Right Sidebar -->
+      <aside id="sidebar">
+        <!-- Add Room -->
+        <div class="panel" id="panel-create">
+          <div class="panel-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <span>Add Room</span>
+          </div>
+          <div class="panel-body">
+            <div class="prop-row">
+              <label>Name</label>
+              <input type="text" id="blockName" value="Room" class="text-input" placeholder="Room name">
+            </div>
+            <div class="prop-row">
+              <label>Length</label>
+              <div class="dim-input-pair compact">
+                <input type="number" id="blockLenFt" min="1" max="200" value="10" class="dim-input">
+                <span class="dim-unit">ft</span>
+                <input type="number" id="blockLenIn" min="0" max="11" value="0" class="dim-input dim-input-sm">
+                <span class="dim-unit">in</span>
+              </div>
+            </div>
+            <div class="prop-row">
+              <label>Breadth</label>
+              <div class="dim-input-pair compact">
+                <input type="number" id="blockBreFt" min="1" max="200" value="8" class="dim-input">
+                <span class="dim-unit">ft</span>
+                <input type="number" id="blockBreIn" min="0" max="11" value="0" class="dim-input dim-input-sm">
+                <span class="dim-unit">in</span>
+              </div>
+            </div>
+            <div class="prop-row">
+              <label>Color</label>
+              <div class="color-pick-row">
+                <input type="color" id="blockColor" value="#6C5CE7" class="color-input">
+                <div class="preset-colors" id="presetColors"></div>
+              </div>
+            </div>
+            <button id="btnAddBlock" class="btn btn-accent btn-full">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Room
+            </button>
+          </div>
+        </div>
+
+        <!-- Layers -->
+        <div class="panel" id="panel-layers">
+          <div class="panel-header">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M4.75 3C4.33579 3 4 3.33579 4 3.75C4 4.16421 4.33579 4.5 4.75 4.5H19.25C19.6642 4.5 20 4.16421 20 3.75C20 3.33579 19.6642 3 19.25 3H4.75Z" fill="currentColor"/><path d="M4.75 6C3.23122 6 2 7.23122 2 8.75V17.25C2 18.7688 3.23122 20 4.75 20H19.25C20.7688 20 22 18.7688 22 17.25V8.75C22 7.23122 20.7688 6 19.25 6H4.75Z" fill="currentColor"/></svg>
+            <span>Layers</span>
+            <span class="badge" id="layerCount">0</span>
+          </div>
+          <div class="panel-body layers-body" id="layersList">
+            <div class="empty-state" id="emptyLayers">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="empty-icon"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="3" y1="9" x2="21" y2="9"/></svg>
+              <p>No rooms yet</p>
+              <span>Add rooms using the form above</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Edit Room (shown when block selected) -->
+        <div class="panel" id="panel-edit" style="display:none;">
+          <div class="panel-header">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M3.75 3C3.33579 3 3 3.33579 3 3.75C3 4.16421 3.33579 4.5 3.75 4.5H20.25C20.6642 4.5 21 4.16421 21 3.75C21 3.33579 20.6642 3 20.25 3H3.75Z" fill="currentColor"/><path d="M15.2919 8.63383C16.3659 7.55988 18.1071 7.55988 19.181 8.63383L20.3661 9.81891C21.4401 10.8929 21.4401 12.6341 20.3661 13.708L12.2938 21.7803C12.1532 21.9209 11.9624 21.9999 11.7635 21.9999H7.75C7.33579 21.9999 7 21.6642 7 21.2499V17.2364C7 17.0375 7.07902 16.8468 7.21967 16.7061L15.2919 8.63383Z" fill="currentColor"/><path d="M3 7.75C3 7.33579 3.33579 7 3.75 7H10.25C10.6642 7 11 7.33579 11 7.75C11 8.16421 10.6642 8.5 10.25 8.5H3.75C3.33579 8.5 3 8.16421 3 7.75Z" fill="currentColor"/><path d="M3.75 11C3.33579 11 3 11.3358 3 11.75C3 12.1642 3.33579 12.5 3.75 12.5H7.2522C7.66641 12.5 8.0022 12.1642 8.0022 11.75C8.0022 11.3358 7.66641 11 7.2522 11H3.75Z" fill="currentColor"/></svg>
+            <span>Edit Room</span>
+            <button class="btn-icon" id="btnCloseEdit" title="Close editor" style="margin-left:auto">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="panel-body">
+            <div class="prop-row">
+              <label>Name</label>
+              <input type="text" id="editName" class="text-input">
+            </div>
+            <div class="prop-row">
+              <label>Length</label>
+              <div class="dim-input-pair compact">
+                <input type="number" id="editLenFt" min="1" max="200" class="dim-input">
+                <span class="dim-unit">ft</span>
+                <input type="number" id="editLenIn" min="0" max="11" class="dim-input dim-input-sm">
+                <span class="dim-unit">in</span>
+              </div>
+            </div>
+            <div class="prop-row">
+              <label>Breadth</label>
+              <div class="dim-input-pair compact">
+                <input type="number" id="editBreFt" min="1" max="200" class="dim-input">
+                <span class="dim-unit">ft</span>
+                <input type="number" id="editBreIn" min="0" max="11" class="dim-input dim-input-sm">
+                <span class="dim-unit">in</span>
+              </div>
+            </div>
+            <div class="prop-row">
+              <label>Position</label>
+              <div class="dim-input-pair compact">
+                <input type="number" id="editX" min="0" class="dim-input" title="X (inches)">
+                <span class="dim-unit">x</span>
+                <input type="number" id="editY" min="0" class="dim-input" title="Y (inches)">
+                <span class="dim-unit">y</span>
+              </div>
+            </div>
+            <div class="prop-row">
+              <label>Color</label>
+              <input type="color" id="editColor" class="color-input">
+            </div>
+            <div class="edit-actions">
+              <button id="btnRotateEdit" class="btn btn-ghost btn-full" title="Rotate 90°">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                Rotate 90°
+              </button>
+              <button id="btnApplyEdit" class="btn btn-primary btn-full">Apply Changes</button>
+              <button id="btnDeleteEdit" class="btn btn-danger btn-full">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                Delete Room
+              </button>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
