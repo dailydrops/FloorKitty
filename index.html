@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Floor Planner</title>
   <meta name="description" content="Plan your rooms on a floor with drag-and-drop blocks, snapping, rotation, and layers management.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -38,9 +41,18 @@
         <select id="snapSize" class="select-input">
           <option value="1">1 in</option>
           <option value="3">3 in</option>
-          <option value="6" selected>6 in</option>
-          <option value="12">1 ft</option>
+          <option value="6">6 in</option>
+          <option value="12" selected>1 ft</option>
         </select>
+      </div>
+
+      <div class="toolbar-divider"></div>
+
+      <div class="toolbar-section">
+        <button id="btnMeasure" class="btn btn-tool" title="Measure distance (M)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 2l20 20"/><path d="M2 2l5 2-3 3z"/><path d="M22 22l-5-2 3-3z"/></svg>
+          Measure
+        </button>
       </div>
 
       <div class="toolbar-divider"></div>
@@ -59,7 +71,7 @@
           <div class="dropdown-menu" id="exportMenu" style="width:200px">
             <div class="dropdown-section-title">Configuration</div>
             <button class="dropdown-item" id="optExportJson">
-              <span>JSON File</span>
+              <span>Config File</span>
               <span class="dropdown-hint">.json</span>
             </button>
             <div class="dropdown-divider"></div>
@@ -91,6 +103,7 @@
           <span id="cursorPos">0' 0" × 0' 0"</span>
           <span id="zoomLevel">100%</span>
         </div>
+        <div id="measure-info"></div>
       </div>
 
       <!-- Right Sidebar -->
@@ -98,7 +111,6 @@
         <!-- Add Room -->
         <div class="panel" id="panel-create">
           <div class="panel-header">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             <span>Add Room</span>
           </div>
           <div class="panel-body">
@@ -131,17 +143,13 @@
                 <div class="preset-colors" id="presetColors"></div>
               </div>
             </div>
-            <button id="btnAddBlock" class="btn btn-accent btn-full">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Add Room
-            </button>
+            <button id="btnAddBlock" class="btn btn-accent btn-full">Add Room</button>
           </div>
         </div>
 
         <!-- Layers -->
         <div class="panel" id="panel-layers">
           <div class="panel-header">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M4.75 3C4.33579 3 4 3.33579 4 3.75C4 4.16421 4.33579 4.5 4.75 4.5H19.25C19.6642 4.5 20 4.16421 20 3.75C20 3.33579 19.6642 3 19.25 3H4.75Z" fill="currentColor"/><path d="M4.75 6C3.23122 6 2 7.23122 2 8.75V17.25C2 18.7688 3.23122 20 4.75 20H19.25C20.7688 20 22 18.7688 22 17.25V8.75C22 7.23122 20.7688 6 19.25 6H4.75Z" fill="currentColor"/></svg>
             <span>Layers</span>
             <span class="badge" id="layerCount">0</span>
           </div>
@@ -157,9 +165,8 @@
         <!-- Edit Room (shown when block selected) -->
         <div class="panel" id="panel-edit" style="display:none;">
           <div class="panel-header">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M3.75 3C3.33579 3 3 3.33579 3 3.75C3 4.16421 3.33579 4.5 3.75 4.5H20.25C20.6642 4.5 21 4.16421 21 3.75C21 3.33579 20.6642 3 20.25 3H3.75Z" fill="currentColor"/><path d="M15.2919 8.63383C16.3659 7.55988 18.1071 7.55988 19.181 8.63383L20.3661 9.81891C21.4401 10.8929 21.4401 12.6341 20.3661 13.708L12.2938 21.7803C12.1532 21.9209 11.9624 21.9999 11.7635 21.9999H7.75C7.33579 21.9999 7 21.6642 7 21.2499V17.2364C7 17.0375 7.07902 16.8468 7.21967 16.7061L15.2919 8.63383Z" fill="currentColor"/><path d="M3 7.75C3 7.33579 3.33579 7 3.75 7H10.25C10.6642 7 11 7.33579 11 7.75C11 8.16421 10.6642 8.5 10.25 8.5H3.75C3.33579 8.5 3 8.16421 3 7.75Z" fill="currentColor"/><path d="M3.75 11C3.33579 11 3 11.3358 3 11.75C3 12.1642 3.33579 12.5 3.75 12.5H7.2522C7.66641 12.5 8.0022 12.1642 8.0022 11.75C8.0022 11.3358 7.66641 11 7.2522 11H3.75Z" fill="currentColor"/></svg>
             <span>Edit Room</span>
-            <button class="btn-icon" id="btnCloseEdit" title="Close editor" style="margin-left:auto">
+            <button class="btn-icon" id="btnCloseEdit" title="Close" style="margin-left:auto">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
@@ -200,15 +207,8 @@
               <input type="color" id="editColor" class="color-input">
             </div>
             <div class="edit-actions">
-              <button id="btnRotateEdit" class="btn btn-ghost btn-full" title="Rotate 90°">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-                Rotate 90°
-              </button>
-              <button id="btnApplyEdit" class="btn btn-primary btn-full">Apply Changes</button>
-              <button id="btnDeleteEdit" class="btn btn-danger btn-full">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                Delete Room
-              </button>
+              <button id="btnRotateEdit" class="btn btn-ghost btn-full" title="Rotate 90°">Rotate 90°</button>
+              <button id="btnDeleteEdit" class="btn btn-danger btn-full">Delete Room</button>
             </div>
           </div>
         </div>
