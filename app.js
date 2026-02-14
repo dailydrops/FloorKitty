@@ -234,11 +234,11 @@
       ctx.fillText(`${i / 12}'`, tl.x + i * scale, tl.y - 6);
     }
 
-    // Right axis (height)
-    ctx.textAlign = 'left';
+    // Left axis (height scale)
+    ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     for (let j = 0; j <= ph; j += labelStep) {
-      ctx.fillText(`${j / 12}'`, tl.x + plotW + 8, tl.y + j * scale);
+      ctx.fillText(`${j / 12}'`, tl.x - 8, tl.y + j * scale);
     }
   }
 
